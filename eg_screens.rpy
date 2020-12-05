@@ -70,6 +70,9 @@ screen eg_root:
             textbutton "File Viewer":
                 action Function(renpy.call_in_new_context, 'eg_l_fileviewer')
 
+            textbutton "Sound Player":
+                action Function(renpy.call_in_new_context, 'eg_l_snd_player')
+
             textbutton "Script Stack":
                 action Function(renpy.call_in_new_context, 'eg_l_scriptstack')
 
@@ -662,7 +665,11 @@ label eg_l_fileviewer:
     call screen eg_fileviewer(make_tree())
     return
 
-style eg_path is eg_text:
+style eg_mono is eg_text:
+    font "DejaVuSansMono.ttf"
+    size 16
+
+style eg_path is eg_mono:
     color "#ff0"
 
 style eg_up is eg_button:
@@ -680,12 +687,19 @@ style eg_leaf_txt is eg_leaf:
     background "#f002"
 style eg_leaf_scr is eg_leaf:
     background "#f772"
+style eg_leaf_text is eg_mono
+style eg_leaf_img_text is eg_mono
+style eg_leaf_snd_text is eg_mono
+style eg_leaf_mv_text is eg_mono
+style eg_leaf_txt_text is eg_mono
+style eg_leaf_scr_text is eg_mono
 
 style eg_node is eg_button:
     background "#00f7"
+style eg_node_text is eg_mono
 
-screen eg_fileviewer(tree):
-    default path = []
+screen eg_fileviewer(tree, at_path = []):
+    default path = list(at_path)
 
     style_prefix 'eg'
 
@@ -706,6 +720,10 @@ screen eg_fileviewer(tree):
                 if path:
                     textbutton "[[Up one level]":
                         action SetScreenVariable('path', path[:-1])
+                else:
+                    textbutton "Return":
+                        style "eg_return"
+                        action Return()
 
                 for k, v in sorted(current_node.items(), key=lambda p: p[0]):
                     if isinstance(v, tuple):
@@ -764,7 +782,7 @@ style eg_src is eg_text:
     font 'DejaVuSansMono.ttf'
 
 screen eg_txt_viewer(fn, value = None):
-    default contents = RenpyConsole.escape_text(value if value is not None else renpy.loader.load(fn).read().encode('utf8'))
+    default contents = RenpyConsole.escape_text(value if value is not None else renpy.loader.load(fn).read().decode('utf8'))
 
     window:
         viewport:
@@ -780,13 +798,17 @@ screen eg_txt_viewer(fn, value = None):
 style eg_channel is eg_good_toggle
 style eg_chan_text is eg_text:
     italic True
-    size 12
+    size 16
 
 style eg_chan_playing is eg_chan_text
 style eg_chan_queue is eg_chan_text:
     color "#070"
 style eg_chan_loop is eg_chan_text:
     color "#007"
+
+label eg_l_snd_player(fn = None):
+    call screen eg_snd_player(fn)
+    return
     
 screen eg_snd_player(fn):
     style_prefix "eg"
@@ -796,29 +818,86 @@ screen eg_snd_player(fn):
             mousewheel True
             scrollbars "both"
 
-        vbox:
-            text "[fn]"
+            vbox:
+                if fn is not None:
+                    text "[fn]"
 
-            add RedrawRegularly(Null())
+                    add RedrawRegularly(Null())
 
-            text "Play on:"
+                    text "Play on:"
 
-            for chan in renpy.audio.audio.all_channels:
+                for chan in renpy.audio.audio.all_channels:
+                    hbox:
+                        spacing 16
+
+                        textbutton "[chan.name]":
+                            style "eg_channel"
+                            selected chan.playing
+                            action If(chan.playing, Stop(chan.name), If(fn is None, Function(renpy.call_in_new_context, 'eg_l_play_on', chan.name), Play(chan.name, fn)))
+
+                        $ playing = chan.get_playing()
+                        text "[playing]":
+                            style "eg_chan_playing"
+
+                        text "[chan.queue]":
+                            style "eg_chan_queue"
+
+                        text "[chan.loop]":
+                            style "eg_chan_loop"
+
+                textbutton "Return" action Return() style "eg_return"
+
+label eg_l_play_on(cname):
+    call screen eg_play_on(cname)
+    return
+
+init python:
+    ALL_SOUNDS = []
+
+    def _build_all_sounds():
+        global ALL_SOUNDS
+        ALL_SOUNDS = []
+
+        for dir, file in renpy.loader.listdirfiles():
+            extn = file.rpartition('.')[2]
+            if extn in EXTENSIONS['snd']:
+                ALL_SOUNDS.append(file)
+
+        ALL_SOUNDS.sort()
+
+    _build_all_sounds()
+
+style eg_filename is eg_button
+style eg_filename_text is eg_text:
+    size 16
+    font "DejaVuSansMono.ttf"
+
+screen eg_play_on(cname):
+    style_prefix "eg"
+
+    window:
+        viewport:
+            mousewheel True
+            scrollbars "both"
+
+            vbox:
+                $ playing = renpy.audio.audio.get_channel(cname).get_playing()
                 hbox:
-                    textbutton "[chan.name]":
-                        style "eg_channel"
-                        selected chan.playing
-                        action If(chan.playing, Stop(chan.name), Play(chan.name, fn))
+                    spacing 16
 
-                    $ playing = chan.get_playing()
+                    text "Now playing:"
+
                     text "[playing]":
-                        style "eg_chan_playing"
+                        style "eg_filename_text"
 
-                    text "[chan.queue]":
-                        style "eg_chan_queue"
+                for fname in ALL_SOUNDS:
+                    textbutton "[fname]":
+                        style "eg_filename"
+                        action [Play(cname, fname), Return()]
 
-                    text "[chan.loop]":
-                        style "eg_chan_loop"
+                null height 48
+
+                textbutton "Return" action Return() style "eg_return"
 
 label eg_l_scriptstack:
     call screen eg_scriptstack
@@ -924,6 +1003,9 @@ label eg_l_replace_stack(cx, idx):
     return
 
 style eg_jumplabel is eg_button
+style eg_jumplabel_text is eg_text:
+    font "DejaVuSansMono.ttf"
+    size 16
 style eg_nonlabel_return is eg_return:
     background "#f002"
     hover_background "#f004"
@@ -950,10 +1032,13 @@ screen eg_replace_stack(cx, idx):
                 null height 48
 
                 # FIXME: this list is huge and causes performance problems--optimize?
-                for label in labels:
-                    textbutton label:
-                        style "eg_jumplabel"
-                        action Return(label)
+                hbox:
+                    box_wrap True
+
+                    for label in labels:
+                        textbutton label:
+                            style "eg_jumplabel"
+                            action Return(label)
 
                 null height 48
 
@@ -984,10 +1069,13 @@ screen eg_push_stack(cx):
             scrollbars "both"
 
             vbox:
-                for label in labels:
-                    textbutton label:
-                        style "eg_jumplabel"
-                        action Return(label)
+                hbox:
+                    box_wrap True
+
+                    for label in labels:
+                        textbutton label:
+                            style "eg_jumplabel"
+                            action Return(label)
 
                 null height 48
 
@@ -1019,9 +1107,13 @@ screen eg_scriptjump:
 
                 null height 48
 
-                for label in labels:
-                    textbutton label:
-                        action Function(top_context_goto, label)
+                hbox:
+                    box_wrap True
+
+                    for label in labels:
+                        textbutton label:
+                            style "eg_jumplabel"
+                            action Function(top_context_goto, label)
 
                 null height 48
 
@@ -1116,11 +1208,15 @@ label eg_l_console:
             RenpyConsole.INSTANCE.input = ''
     return
 
-style eg_console is eg_text
+style eg_console is eg_text:
+    font "DejaVuSansMono.ttf"
+    size 16
 style eg_prompt is eg_console:
     color "#007"
 style eg_input is eg_console:
     color "#070"
+style eg_control is eg_console:
+    color "#ff0"
 
 screen eg_console:
     window:
@@ -1129,7 +1225,7 @@ screen eg_console:
                 mousewheel True
                 scrollbars "vertical"
                 xfill True
-                yminimum 800
+                ymaximum 800
 
                 text RenpyConsole.INSTANCE.buffer:
                     style "eg_console"
@@ -1139,6 +1235,7 @@ screen eg_console:
                     style "eg_prompt"
 
                 input:
+                    style "eg_control"
                     xminimum 800
                     value FieldInputValue(RenpyConsole.INSTANCE, 'input', returnable = True)
 
