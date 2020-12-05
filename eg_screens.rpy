@@ -67,14 +67,21 @@ screen eg_root:
             textbutton "Achievements and Milestones":
                 action Function(renpy.call_in_new_context, 'eg_l_achievements')
 
+            textbutton "File Viewer":
+                action Function(renpy.call_in_new_context, 'eg_l_fileviewer')
+
             textbutton "Script Stack":
                 action Function(renpy.call_in_new_context, 'eg_l_scriptstack')
 
             textbutton "Script Jump":
                 action Function(renpy.call_in_new_context, 'eg_l_scriptjump')
 
-            textbutton "Variable Editor":
-                action Function(renpy.call_in_new_context, 'eg_l_vared')
+            hbox:
+                textbutton "Variable Editor":
+                    action Function(renpy.call_in_new_context, 'eg_l_vared')
+                    sensitive False
+
+                text "TODO"
 
             textbutton "Python Console":
                 action Function(renpy.call_in_new_context, 'eg_l_console')
@@ -582,6 +589,237 @@ screen eg_achievements:
                     action Return()
                     style "eg_return"
 
+init python:
+    import cStringIO
+
+    def get_rpyc_source(fn):
+        import unrpyc, decompiler, codecs
+        ast = unrpyc.read_ast_from_file(renpy.loader.load(fn))
+        info = codecs.lookup('utf8')
+        of = cStringIO.StringIO()
+        cof = codecs.StreamReaderWriter(of, info.streamreader, info.streamwriter)
+        decompiler.pprint(cof, ast)
+        src = cof.getvalue().decode('utf8')
+        print type(src), repr(src)
+        return cof.getvalue()
+
+    def get_tree_path(tree, path):
+        node = tree
+        path = list(path)
+        while path:
+            node = node.setdefault(path.pop(0), {})
+        return node
+
+    def make_tree():
+        tree = {}
+        for dir, file in renpy.loader.listdirfiles():
+            path = [str(dir)] + file.replace('\\', '/').split('/')
+            get_tree_path(tree, path[:-1])[path[-1]] = (dir, file)
+        return tree
+
+    EXTENSIONS = {
+        'img': set(('png', 'jpg', 'jpeg')),
+        'mv': set(('ogv', 'mp4')),
+        'snd': set(('ogg', 'wav', 'opus')),
+        'txt': set(('txt', 'abc', 'rpy', 'py')),
+        'scr': set(('rpyc',)),
+    }
+
+    def classify_filename(fn):
+        extn = fn.rpartition('.')[2].lower()
+        for cls, s in EXTENSIONS.items():
+            if extn in s:
+                return cls
+        return None  # explicitly
+
+    HANDLERS = {}
+    def handle_img(fn):
+        renpy.call_screen('eg_img_viewer', fn)
+    HANDLERS['img'] = handle_img
+
+    def handle_mv(fn):
+        renpy.movie_cutscene(fn)
+    HANDLERS['mv'] = handle_mv
+
+    def handle_snd(fn):
+        renpy.call_screen('eg_snd_player', fn)
+    HANDLERS['snd'] = handle_snd
+
+    def handle_txt(fn):
+        renpy.call_screen('eg_txt_viewer', fn)
+    HANDLERS['txt'] = handle_txt
+
+    def handle_scr(fn):
+        renpy.call_screen('eg_txt_viewer', None, value = get_rpyc_source(fn))
+    HANDLERS['scr'] = handle_scr
+
+    def handle_file(cl, fn):
+        handler = HANDLERS.get(cl)
+        if handler:
+            handler(fn)
+
+label eg_l_fileviewer:
+    call screen eg_fileviewer(make_tree())
+    return
+
+style eg_path is eg_text:
+    color "#ff0"
+
+style eg_up is eg_button:
+    background "#0772"
+
+style eg_leaf is eg_button:
+    background "#7772"
+style eg_leaf_img is eg_leaf:
+    background "#0f02"
+style eg_leaf_snd is eg_leaf:
+    background "#f0f2"
+style eg_leaf_mv is eg_leaf:
+    background "#0ff2"
+style eg_leaf_txt is eg_leaf:
+    background "#f002"
+style eg_leaf_scr is eg_leaf:
+    background "#f772"
+
+style eg_node is eg_button:
+    background "#00f7"
+
+screen eg_fileviewer(tree):
+    default path = []
+
+    style_prefix 'eg'
+
+    key "mousedown_3":
+        action If(path, SetScreenVariable('path', path[:-1]), Return())
+
+    window:
+        viewport:
+            mousewheel True
+            scrollbars "both"
+
+            $ current_node = get_tree_path(tree, path)
+
+            vbox:
+                text ("/".join(path)):
+                    style "eg_path"
+
+                if path:
+                    textbutton "[[Up one level]":
+                        action SetScreenVariable('path', path[:-1])
+
+                for k, v in sorted(current_node.items(), key=lambda p: p[0]):
+                    if isinstance(v, tuple):
+                        $ cl = classify_filename(v[1])
+                        textbutton k:
+                            style ('eg_leaf' if cl is None else 'eg_leaf_'+cl)
+                            action Function(renpy.call_in_new_context, 'eg_handle_fn', cl, v)
+                    else:
+                        textbutton k:
+                            style 'eg_node'
+                            action SetScreenVariable('path', path + [k])
+
+label eg_handle_fn(cl, v):
+    if cl is None:
+        return
+
+    $ handle_file(cl, v[1])
+    return
+
+init python:
+    import pygame
+
+    class RedrawRegularly(renpy.Displayable):
+        def __init__(self, child, **kwargs):
+            super(RedrawRegularly, self).__init__(**kwargs)
+            self.child = child
+
+        def render(self, w, h, s, a):
+            renpy.timeout(0.05)
+            return self.child.render(w, h, s, a)
+
+        def event(self, ev, x, y, s):
+            if ev.type == renpy.display.core.TIMEEVENT:
+                renpy.restart_interaction()
+            self.child.event(ev, x, y, s)
+
+        def visit(self):
+            return [self.child]
+
+screen eg_img_viewer(fn):
+    default scale = 1.0
+    python:
+        mx, my = renpy.get_mouse_pos()
+        sw, sh = renpy.get_physical_size()
+        nmx, nmy = float(mx)/sw, float(my)/sh
+
+    key "mousedown_4" action SetScreenVariable('scale', scale * 1.1)
+    key "mousedown_5" action SetScreenVariable('scale', scale / 1.1)
+    key "K_PLUS" action SetScreenVariable('scale', scale * 1.1)
+    key "K_MINUS" action SetScreenVariable('scale', scale / 1.1)
+
+    add RedrawRegularly(im.FactorScale(fn, scale)) align (nmx, nmy)
+
+style eg_src is eg_text:
+    size 12
+    font 'DejaVuSansMono.ttf'
+
+screen eg_txt_viewer(fn, value = None):
+    default contents = RenpyConsole.escape_text(value if value is not None else renpy.loader.load(fn).read().encode('utf8'))
+
+    window:
+        viewport:
+            mousewheel True
+            scrollbars "both"
+
+            vbox:
+                text "[contents]":
+                    style "eg_src"
+
+                textbutton "Return" action Return() style "eg_return"
+
+style eg_channel is eg_good_toggle
+style eg_chan_text is eg_text:
+    italic True
+    size 12
+
+style eg_chan_playing is eg_chan_text
+style eg_chan_queue is eg_chan_text:
+    color "#070"
+style eg_chan_loop is eg_chan_text:
+    color "#007"
+    
+screen eg_snd_player(fn):
+    style_prefix "eg"
+
+    window:
+        viewport:
+            mousewheel True
+            scrollbars "both"
+
+        vbox:
+            text "[fn]"
+
+            add RedrawRegularly(Null())
+
+            text "Play on:"
+
+            for chan in renpy.audio.audio.all_channels:
+                hbox:
+                    textbutton "[chan.name]":
+                        style "eg_channel"
+                        selected chan.playing
+                        action If(chan.playing, Stop(chan.name), Play(chan.name, fn))
+
+                    $ playing = chan.get_playing()
+                    text "[playing]":
+                        style "eg_chan_playing"
+
+                    text "[chan.queue]":
+                        style "eg_chan_queue"
+
+                    text "[chan.loop]":
+                        style "eg_chan_loop"
+
 label eg_l_scriptstack:
     call screen eg_scriptstack
     return  # This could ROP!
@@ -794,7 +1032,7 @@ screen eg_scriptjump:
 init python:
     import sys
     import cStringIO
-    from grissess_debug import code
+    import code  # from Py2 or the mirror in here (also in sys.path)
 
     class RenpyConsole(code.InteractiveInterpreter):
         STYLE_TAGS = {
