@@ -121,6 +121,7 @@ init python:
     }
 
     ECK_MOD_ENDINGS_SEEN = re.compile('eck(.+)endingseen(.)')
+    TS_MOD_ENDINGS_SEEN = re.compile('ts(.+)endingseen(.)')
 
     def alter_status(ch, f):
         varname = ch + 'status'
@@ -204,14 +205,18 @@ screen eg_charstat:
             val.sort(key = lambda pair: pair[0])
 
         eck_modded_endings = {}
+        ts_modded_endings = {}
         for i in dir(persistent):
             match = ECK_MOD_ENDINGS_SEEN.match(i)
-            if not match:
-                continue
-
-            eck_modded_endings.setdefault(match.group(1), []).append(match.group(2))
+            if match:
+                eck_modded_endings.setdefault(match.group(1), []).append(match.group(2))
+            match = TS_MOD_ENDINGS_SEEN.match(i)
+            if match:
+                ts_modded_endings.setdefault(match.group(1), []).append(match.group(2))
 
         for val in eck_modded_endings.values():
+            val.sort()
+        for val in ts_modded_endings.values():
             val.sort()
 
         all_chars = sorted(set(list(played_simple.keys()) + list(played_chapters.keys()) + list(status_chars) + list(failing_chars) + list(surviving_chars)))
@@ -311,19 +316,35 @@ screen eg_charstat:
                         else:
                             null
 
-                        if char in eck_modded_endings:
-                            hbox:
-                                box_wrap True
+                        if char in eck_modded_endings or char in ts_modded_endings:
+                            vbox:
+                                if char in eck_modded_endings:
+                                    hbox:
+                                        box_wrap True
 
-                                text "ECK:" style "eg_small_text"
+                                        text "ECK:" style "eg_small_text"
 
-                                $ ends = eck_modded_endings[char]
+                                        $ ends = eck_modded_endings[char]
 
-                                for end in ends:
-                                    textbutton (end.upper()):
-                                        style "eg_small_toggle"
-                                        selected getattr(persistent, 'eck%sendingseen%s' % (char, end)) == end.upper()
-                                        action Function(toggle_eck_modded_ending, char, end)
+                                        for end in ends:
+                                            textbutton (end.upper()):
+                                                style "eg_small_toggle"
+                                                selected getattr(persistent, 'eck%sendingseen%s' % (char, end)) == end.upper()
+                                                action Function(toggle_eck_modded_ending, char, end)
+                                if char in ts_modded_endings:
+                                    hbox:
+                                        box_wrap True
+
+                                        text "TS:" style "eg_small_text"
+
+                                        $ ends = ts_modded_endings[char]
+
+                                        for end in ends:
+                                            $ var = 'ts%sendingseen%s' % (char, end)
+                                            textbutton (end.upper()):
+                                                style "eg_small_toggle"
+                                                selected getattr(persistent, var)
+                                                action ToggleField(persistent, var)
                         else:
                             null
 
@@ -653,7 +674,7 @@ init python:
     HANDLERS['txt'] = handle_txt
 
     def handle_scr(fn):
-        renpy.call_screen('eg_txt_viewer', None, value = get_rpyc_source(fn))
+        renpy.call_screen('eg_txt_viewer', None, value = get_rpyc_source(fn).decode('utf8'))
     HANDLERS['scr'] = handle_scr
 
     def handle_file(cl, fn):
