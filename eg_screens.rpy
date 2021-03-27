@@ -465,7 +465,7 @@ init python:
     MILESTONES = collections.OrderedDict([
         ('playedadine2', 'Played Adine Chapter 2 (know about Amely)'),
         ('c2pictures', "Seen Remy's pictures in Chapter 2 (asked about Amelia)"),
-        ('varasaved', 'Saved Vara after Orange died'),
+        ('varasaved', 'Saved Vara after Linnea died'),
         ('heardaboutcancer', "Know about Anna's cancer (either way)"),
         ('heardaboutcancerremy', "Know about Anna's cancer from Remy in Chapter 3"),
         ('heardaboutcancerenvelope', "Know about Anna's cancer by reading her mail in Chapter 2"),
