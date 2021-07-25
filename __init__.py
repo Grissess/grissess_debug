@@ -26,8 +26,11 @@ class AWSWMod(Mod):
 
         nav_item = modast.get_slscreen('eg_pause_menu_item')
 
+        title_scr = modast.get_slscreen('main_menu')
+
         for child in nav_item.children:
             nav_frame.children.append(child)
+            title_scr.children.append(child)
 
         renpy.config.developer = True
 
