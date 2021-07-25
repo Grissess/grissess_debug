@@ -146,7 +146,7 @@ init python:
         alter_status(ch, lambda x: x-1)
 
     def describe_status(ch):
-        return 'dead' if getattr(store, ch + 'dead') else getattr(store, ch + 'status')
+        return 'dead' if getattr(store, ch + 'dead', False) else getattr(store, ch + 'status')
 
     CHAR_COLOR_CACHE = {}
 
@@ -159,9 +159,13 @@ init python:
 
         for vn in dir(store):
             val = getattr(store, vn)
-            if isinstance(val, renpy.character.ADVCharacter) and val.name is not None and val.name.lower() in (ch, NICKNAMES.get(ch)):
-                CHAR_COLOR_CACHE[ch] = val.who_args['color']
-                return CHAR_COLOR_CACHE[ch]
+            try:
+                if isinstance(val, renpy.character.ADVCharacter) and val.name is not None and isinstance(val.name, basestring) and val.name.lower() in (ch, NICKNAMES.get(ch)):
+                    CHAR_COLOR_CACHE[ch] = val.who_args['color']
+                    return CHAR_COLOR_CACHE[ch]
+            except Exception:  # AttributeError, ValueError, ...
+                import traceback
+                traceback.print_exc()
 
         CHAR_COLOR_CACHE[ch] = '#fff'
         return CHAR_COLOR_CACHE[ch]
